@@ -420,23 +420,28 @@ public class Http2FrameCodec extends Http2ConnectionHandler {
             // We should not re-use ids.
             assert old == null;
 
-            // Clean up the stream being initialized if writing the headers fails.
-            promise.addListener(new ChannelFutureListener() {
-                @Override
-                public void operationComplete(ChannelFuture channelFuture) {
-                    if (!channelFuture.isSuccess()) {
-                        frameStreamToInitializeMap.remove(streamId);
-                    }
-                }
-            });
-
             encoder().writeHeaders(ctx, streamId, headersFrame.headers(), headersFrame.padding(),
                     headersFrame.isEndStream(), promise);
 
             if (!promise.isDone()) {
                 numBufferedStreams++;
                 promise.addListener(bufferedStreamsListener);
+                // Clean up the stream being initialized if writing the headers fails.
+                promise.addListener(new ChannelFutureListener() {
+                    @Override
+                    public void operationComplete(ChannelFuture channelFuture) {
+                        handleHeaderFuture(channelFuture, streamId);
+                    }
+                });
+            } else {
+                handleHeaderFuture(promise, streamId);
             }
+        }
+    }
+
+    private void handleHeaderFuture(ChannelFuture channelFuture, int streamId) {
+        if (!channelFuture.isSuccess()) {
+            frameStreamToInitializeMap.remove(streamId);
         }
     }
 
