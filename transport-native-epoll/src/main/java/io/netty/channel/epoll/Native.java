@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,6 +17,7 @@ package io.netty.channel.epoll;
 
 import io.netty.channel.unix.FileDescriptor;
 import io.netty.channel.unix.Socket;
+import io.netty.channel.unix.Unix;
 import io.netty.util.internal.NativeLibraryLoader;
 import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.SystemPropertyUtil;
@@ -25,6 +26,7 @@ import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
 import java.io.IOException;
+import java.nio.channels.Selector;
 import java.util.Locale;
 
 import static io.netty.channel.epoll.NativeStaticallyReferencedJniMethods.epollerr;
@@ -32,9 +34,10 @@ import static io.netty.channel.epoll.NativeStaticallyReferencedJniMethods.epolle
 import static io.netty.channel.epoll.NativeStaticallyReferencedJniMethods.epollin;
 import static io.netty.channel.epoll.NativeStaticallyReferencedJniMethods.epollout;
 import static io.netty.channel.epoll.NativeStaticallyReferencedJniMethods.epollrdhup;
+import static io.netty.channel.epoll.NativeStaticallyReferencedJniMethods.isSupportingRecvmmsg;
 import static io.netty.channel.epoll.NativeStaticallyReferencedJniMethods.isSupportingSendmmsg;
-import static io.netty.channel.epoll.NativeStaticallyReferencedJniMethods.isSupportingTcpFastopen;
 import static io.netty.channel.epoll.NativeStaticallyReferencedJniMethods.kernelVersion;
+import static io.netty.channel.epoll.NativeStaticallyReferencedJniMethods.tcpFastopenMode;
 import static io.netty.channel.epoll.NativeStaticallyReferencedJniMethods.tcpMd5SigMaxKeyLen;
 import static io.netty.channel.unix.Errors.ioResult;
 import static io.netty.channel.unix.Errors.newIOException;
@@ -48,6 +51,16 @@ public final class Native {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(Native.class);
 
     static {
+        Selector selector = null;
+        try {
+            // We call Selector.open() as this will under the hood cause IOUtil to be loaded.
+            // This is a workaround for a possible classloader deadlock that could happen otherwise:
+            //
+            // See https://github.com/netty/netty/issues/10187
+            selector = Selector.open();
+        } catch (IOException ignore) {
+            // Just ignore
+        }
         try {
             // First, try calling a side-effect free JNI method to see if the library was already
             // loaded by the application.
@@ -55,9 +68,24 @@ public final class Native {
         } catch (UnsatisfiedLinkError ignore) {
             // The library was not previously loaded, load it now.
             loadNativeLibrary();
+        } finally {
+            try {
+                if (selector != null) {
+                    selector.close();
+                }
+            } catch (IOException ignore) {
+                // Just ignore
+            }
         }
-        Socket.initialize();
+        Unix.registerInternal(new Runnable() {
+            @Override
+            public void run() {
+                registerUnix();
+            }
+        });
     }
+
+    private static native int registerUnix();
 
     // EventLoop operations and constants
     public static final int EPOLLIN = epollin();
@@ -67,7 +95,29 @@ public final class Native {
     public static final int EPOLLERR = epollerr();
 
     public static final boolean IS_SUPPORTING_SENDMMSG = isSupportingSendmmsg();
-    public static final boolean IS_SUPPORTING_TCP_FASTOPEN = isSupportingTcpFastopen();
+    static final boolean IS_SUPPORTING_RECVMMSG = isSupportingRecvmmsg();
+    static final boolean IS_SUPPORTING_UDP_SEGMENT = isSupportingUdpSegment();
+    private static final int TFO_ENABLED_CLIENT_MASK = 0x1;
+    private static final int TFO_ENABLED_SERVER_MASK = 0x2;
+    private static final int TCP_FASTOPEN_MODE = tcpFastopenMode();
+    /**
+     * <a href ="https://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt">tcp_fastopen</a> client mode enabled
+     * state.
+     */
+    static final boolean IS_SUPPORTING_TCP_FASTOPEN_CLIENT =
+            (TCP_FASTOPEN_MODE & TFO_ENABLED_CLIENT_MASK) == TFO_ENABLED_CLIENT_MASK;
+    /**
+     * <a href ="https://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt">tcp_fastopen</a> server mode enabled
+     * state.
+     */
+    static final boolean IS_SUPPORTING_TCP_FASTOPEN_SERVER =
+            (TCP_FASTOPEN_MODE & TFO_ENABLED_SERVER_MASK) == TFO_ENABLED_SERVER_MASK;
+    /**
+     * @deprecated Use {@link #IS_SUPPORTING_TCP_FASTOPEN_CLIENT} or {@link #IS_SUPPORTING_TCP_FASTOPEN_SERVER}.
+     */
+    @Deprecated
+    public static final boolean IS_SUPPORTING_TCP_FASTOPEN = IS_SUPPORTING_TCP_FASTOPEN_CLIENT ||
+            IS_SUPPORTING_TCP_FASTOPEN_SERVER;
     public static final int TCP_MD5SIG_MAXKEYLEN = tcpMd5SigMaxKeyLen();
     public static final String KERNEL_VERSION = kernelVersion();
 
@@ -79,6 +129,7 @@ public final class Native {
         return new FileDescriptor(timerFd());
     }
 
+    private static native boolean isSupportingUdpSegment();
     private static native int eventFd();
     private static native int timerFd();
     public static native void eventFdWrite(int fd, long value);

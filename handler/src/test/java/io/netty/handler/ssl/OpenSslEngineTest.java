@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -39,11 +39,16 @@ import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLEngineResult.HandshakeStatus;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLParameters;
+import javax.net.ssl.X509ExtendedKeyManager;
+import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.security.AlgorithmConstraints;
 import java.security.AlgorithmParameters;
 import java.security.CryptoPrimitive;
 import java.security.Key;
+import java.security.Principal;
+import java.security.PrivateKey;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -83,7 +88,7 @@ public class OpenSslEngineTest extends SSLEngineTest {
             params.add(new Object[] { type, ProtocolCipherCombo.tlsv12(), true, false });
             params.add(new Object[] { type, ProtocolCipherCombo.tlsv12(), true, true });
 
-            if (OpenSsl.isTlsv13Supported()) {
+            if (SslProvider.isTlsv13Supported(SslProvider.OPENSSL)) {
                 params.add(new Object[] { type, ProtocolCipherCombo.tlsv13(), false, false });
                 params.add(new Object[] { type, ProtocolCipherCombo.tlsv13(), false, true });
 
@@ -1148,29 +1153,37 @@ public class OpenSslEngineTest extends SSLEngineTest {
 
     @Test
     public void testExtractMasterkeyWorksCorrectly() throws Exception {
+        if (protocolCipherCombo != ProtocolCipherCombo.tlsv12()) {
+            return;
+        }
         SelfSignedCertificate cert = new SelfSignedCertificate();
         serverSslCtx = wrapContext(SslContextBuilder.forServer(cert.key(), cert.cert())
+                .protocols(protocols())
+                .ciphers(ciphers())
                 .sslProvider(SslProvider.OPENSSL).build());
         final SSLEngine serverEngine =
                 wrapEngine(serverSslCtx.newEngine(UnpooledByteBufAllocator.DEFAULT));
         clientSslCtx = wrapContext(SslContextBuilder.forClient()
                 .trustManager(cert.certificate())
+                .protocols(protocols())
+                .ciphers(ciphers())
                 .sslProvider(SslProvider.OPENSSL).build());
         final SSLEngine clientEngine =
                 wrapEngine(clientSslCtx.newEngine(UnpooledByteBufAllocator.DEFAULT));
 
+        final String enabledCipher = "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256";
         try {
             //lets set the cipher suite to a specific one with DHE
             assumeTrue("The diffie hellman cipher is not supported on your runtime.",
                     Arrays.asList(clientEngine.getSupportedCipherSuites())
-                            .contains("TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"));
+                            .contains(enabledCipher));
 
             //https://www.ietf.org/rfc/rfc5289.txt
             //For cipher suites ending with _SHA256, the PRF is the TLS PRF
             //[RFC5246] with SHA-256 as the hash function.  The MAC is HMAC
             //[RFC2104] with SHA-256 as the hash function.
-            clientEngine.setEnabledCipherSuites(new String[] { "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256" });
-            serverEngine.setEnabledCipherSuites(new String[] { "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256" });
+            clientEngine.setEnabledCipherSuites(new String[] { enabledCipher });
+            serverEngine.setEnabledCipherSuites(new String[] { enabledCipher });
 
             int appBufferMax = clientEngine.getSession().getApplicationBufferSize();
             int netBufferMax = clientEngine.getSession().getPacketBufferSize();
@@ -1186,8 +1199,8 @@ public class OpenSslEngineTest extends SSLEngineTest {
             ByteBuffer cTOs = ByteBuffer.allocate(netBufferMax);
             ByteBuffer sTOc = ByteBuffer.allocate(netBufferMax);
 
-            ByteBuffer clientOut = ByteBuffer.wrap("Hi Server, I'm Client".getBytes());
-            ByteBuffer serverOut = ByteBuffer.wrap("Hello Client, I'm Server".getBytes());
+            ByteBuffer clientOut = ByteBuffer.wrap("Hi Server, I'm Client".getBytes(CharsetUtil.US_ASCII));
+            ByteBuffer serverOut = ByteBuffer.wrap("Hello Client, I'm Server".getBytes(CharsetUtil.US_ASCII));
 
             // This implementation is largely imitated from
             // https://docs.oracle.com/javase/8/docs/technotes/
@@ -1239,7 +1252,7 @@ public class OpenSslEngineTest extends SSLEngineTest {
                     cTOs.flip();
                     sTOc.flip();
 
-                    // See http://tools.ietf.org/html/rfc5246#section-6.3:
+                    // See https://tools.ietf.org/html/rfc5246#section-6.3:
                     // key_block = PRF(SecurityParameters.master_secret, "key expansion",
                     //                 SecurityParameters.server_random + SecurityParameters.client_random);
                     //
@@ -1304,6 +1317,70 @@ public class OpenSslEngineTest extends SSLEngineTest {
         }
     }
 
+    @Test(expected = SSLException.class)
+    public void testNoKeyFound() throws Exception {
+        clientSslCtx = wrapContext(SslContextBuilder
+                .forClient()
+                .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                .sslProvider(sslClientProvider())
+                .protocols(protocols())
+                .ciphers(ciphers())
+                .build());
+        SSLEngine client = wrapEngine(clientSslCtx.newEngine(UnpooledByteBufAllocator.DEFAULT));
+
+        serverSslCtx = wrapContext(SslContextBuilder
+                .forServer(new X509ExtendedKeyManager() {
+                    @Override
+                    public String[] getClientAliases(String keyType, Principal[] issuers) {
+                        return new String[0];
+                    }
+
+                    @Override
+                    public String chooseClientAlias(String[] keyType, Principal[] issuers, Socket socket) {
+                        return null;
+                    }
+
+                    @Override
+                    public String[] getServerAliases(String keyType, Principal[] issuers) {
+                        return new String[0];
+                    }
+
+                    @Override
+                    public String chooseServerAlias(String keyType, Principal[] issuers, Socket socket) {
+                        return null;
+                    }
+
+                    @Override
+                    public X509Certificate[] getCertificateChain(String alias) {
+                        return new X509Certificate[0];
+                    }
+
+                    @Override
+                    public PrivateKey getPrivateKey(String alias) {
+                        return null;
+                    }
+                })
+                .sslProvider(sslServerProvider())
+                .protocols(protocols())
+                .ciphers(ciphers())
+                .build());
+        SSLEngine server = wrapEngine(serverSslCtx.newEngine(UnpooledByteBufAllocator.DEFAULT));
+
+        try {
+            handshake(client, server);
+        } finally {
+            cleanupClientSslEngine(client);
+            cleanupServerSslEngine(server);
+        }
+    }
+
+    @Override
+    @Test
+    public void testSessionLocalWhenNonMutualWithKeyManager() throws Exception {
+        checkShouldUseKeyManagerFactory();
+        super.testSessionLocalWhenNonMutualWithKeyManager();
+    }
+
     @Override
     protected SslProvider sslClientProvider() {
         return SslProvider.OPENSSL;
@@ -1337,11 +1414,46 @@ public class OpenSslEngineTest extends SSLEngineTest {
         return (ReferenceCountedOpenSslEngine) engine;
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     protected SslContext wrapContext(SslContext context) {
         if (context instanceof OpenSslContext) {
             ((OpenSslContext) context).setUseTasks(useTasks);
+            // Explicit enable the session cache as its disabled by default on the client side.
+            ((OpenSslContext) context).sessionContext().setSessionCacheEnabled(true);
         }
         return context;
+    }
+
+    @Test
+    @Override
+    public void testSessionCache() throws Exception {
+        super.testSessionCache();
+        assertSessionContext(clientSslCtx);
+        assertSessionContext(serverSslCtx);
+    }
+
+    private static void assertSessionContext(SslContext context) {
+        if (context == null) {
+            return;
+        }
+        OpenSslSessionContext serverSessionCtx = (OpenSslSessionContext) context.sessionContext();
+        assertTrue(serverSessionCtx.isSessionCacheEnabled());
+        if (serverSessionCtx.getIds().hasMoreElements()) {
+            serverSessionCtx.setSessionCacheEnabled(false);
+            assertFalse(serverSessionCtx.getIds().hasMoreElements());
+            assertFalse(serverSessionCtx.isSessionCacheEnabled());
+        }
+    }
+
+    @Override
+    protected void assertSessionReusedForEngine(SSLEngine clientEngine, SSLEngine serverEngine, boolean reuse) {
+        assertEquals(reuse, unwrapEngine(clientEngine).isSessionReused());
+        assertEquals(reuse, unwrapEngine(serverEngine).isSessionReused());
+    }
+
+    @Override
+    protected boolean isSessionMaybeReused(SSLEngine engine) {
+        return unwrapEngine(engine).isSessionReused();
     }
 }

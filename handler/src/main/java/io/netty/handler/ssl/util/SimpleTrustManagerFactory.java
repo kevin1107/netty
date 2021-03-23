@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,6 +17,7 @@
 package io.netty.handler.ssl.util;
 
 import io.netty.util.concurrent.FastThreadLocal;
+import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.SuppressJava6Requirement;
 
@@ -73,9 +74,7 @@ public abstract class SimpleTrustManagerFactory extends TrustManagerFactory {
         CURRENT_SPI.get().init(this);
         CURRENT_SPI.remove();
 
-        if (name == null) {
-            throw new NullPointerException("name");
-        }
+        ObjectUtil.checkNotNull(name, "name");
     }
 
     /**

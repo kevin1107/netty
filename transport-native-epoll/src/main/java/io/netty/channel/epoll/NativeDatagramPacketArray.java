@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -31,7 +31,7 @@ import static io.netty.channel.unix.Limits.UIO_MAX_IOV;
 import static io.netty.channel.unix.NativeInetAddress.copyIpv4MappedIpv6Address;
 
 /**
- * Support <a href="http://linux.die.net/man/2/sendmmsg">sendmmsg(...)</a> on linux with GLIBC 2.14+
+ * Support <a href="https://linux.die.net//man/2/sendmmsg">sendmmsg(...)</a> on linux with GLIBC 2.14+
  */
 final class NativeDatagramPacketArray {
 
@@ -55,10 +55,10 @@ final class NativeDatagramPacketArray {
     }
 
     boolean addWritable(ByteBuf buf, int index, int len) {
-        return add0(buf, index, len, null);
+        return add0(buf, index, len, 0, null);
     }
 
-    private boolean add0(ByteBuf buf, int index, int len, InetSocketAddress recipient) {
+    private boolean add0(ByteBuf buf, int index, int len, int segmentLen, InetSocketAddress recipient) {
         if (count == packets.length) {
             // We already filled up to UIO_MAX_IOV messages. This is the max allowed per
             // recvmmsg(...) / sendmmsg(...) call, we will try again later.
@@ -73,14 +73,15 @@ final class NativeDatagramPacketArray {
             return false;
         }
         NativeDatagramPacket p = packets[count];
-        p.init(iovArray.memoryAddress(offset), iovArray.count() - offset, recipient);
+        p.init(iovArray.memoryAddress(offset), iovArray.count() - offset, segmentLen, recipient);
 
         count++;
         return true;
     }
 
-    void add(ChannelOutboundBuffer buffer, boolean connected) throws Exception {
+    void add(ChannelOutboundBuffer buffer, boolean connected, int maxMessagesPerWrite) throws Exception {
         processor.connected = connected;
+        processor.maxMessagesPerWrite = maxMessagesPerWrite;
         buffer.forEachFlushedMessage(processor);
     }
 
@@ -109,17 +110,33 @@ final class NativeDatagramPacketArray {
 
     private final class MyMessageProcessor implements MessageProcessor {
         private boolean connected;
+        private int maxMessagesPerWrite;
 
         @Override
         public boolean processMessage(Object msg) {
+            final boolean added;
             if (msg instanceof DatagramPacket) {
                 DatagramPacket packet = (DatagramPacket) msg;
                 ByteBuf buf = packet.content();
-                return add0(buf, buf.readerIndex(), buf.readableBytes(), packet.recipient());
-            }
-            if (msg instanceof ByteBuf && connected) {
+                int segmentSize = 0;
+                if (packet instanceof SegmentedDatagramPacket) {
+                    int seg = ((SegmentedDatagramPacket) packet).segmentSize();
+                    // We only need to tell the kernel that we want to use UDP_SEGMENT if there are multiple
+                    // segments in the packet.
+                    if (buf.readableBytes() > seg) {
+                        segmentSize = seg;
+                    }
+                }
+                added = add0(buf, buf.readerIndex(), buf.readableBytes(), segmentSize, packet.recipient());
+            } else if (msg instanceof ByteBuf && connected) {
                 ByteBuf buf = (ByteBuf) msg;
-                return add0(buf, buf.readerIndex(), buf.readableBytes(), null);
+                added = add0(buf, buf.readerIndex(), buf.readableBytes(), 0, null);
+            } else {
+                added = false;
+            }
+            if (added) {
+                maxMessagesPerWrite--;
+                return maxMessagesPerWrite > 0;
             }
             return false;
         }
@@ -137,13 +154,15 @@ final class NativeDatagramPacketArray {
 
         private final byte[] addr = new byte[16];
 
+        private int segmentSize;
         private int addrLen;
         private int scopeId;
         private int port;
 
-        private void init(long memoryAddress, int count, InetSocketAddress recipient) {
+        private void init(long memoryAddress, int count, int segmentSize, InetSocketAddress recipient) {
             this.memoryAddress = memoryAddress;
             this.count = count;
+            this.segmentSize = segmentSize;
 
             if (recipient == null) {
                 this.scopeId = 0;

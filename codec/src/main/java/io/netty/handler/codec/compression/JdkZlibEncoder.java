@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -22,6 +22,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.ChannelPromiseNotifier;
 import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.SuppressJava6Requirement;
 
@@ -97,9 +98,7 @@ public class JdkZlibEncoder extends ZlibEncoder {
             throw new IllegalArgumentException(
                     "compressionLevel: " + compressionLevel + " (expected: 0-9)");
         }
-        if (wrapper == null) {
-            throw new NullPointerException("wrapper");
-        }
+        ObjectUtil.checkNotNull(wrapper, "wrapper");
         if (wrapper == ZlibWrapper.ZLIB_OR_NONE) {
             throw new IllegalArgumentException(
                     "wrapper '" + ZlibWrapper.ZLIB_OR_NONE + "' is not " +
@@ -143,9 +142,7 @@ public class JdkZlibEncoder extends ZlibEncoder {
             throw new IllegalArgumentException(
                     "compressionLevel: " + compressionLevel + " (expected: 0-9)");
         }
-        if (dictionary == null) {
-            throw new NullPointerException("dictionary");
-        }
+        ObjectUtil.checkNotNull(dictionary, "dictionary");
 
         wrapper = ZlibWrapper.ZLIB;
         deflater = new Deflater(compressionLevel);

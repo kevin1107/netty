@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -35,6 +35,7 @@ import io.netty.handler.codec.http.HttpResponseDecoder;
 import io.netty.handler.codec.http.HttpScheme;
 import io.netty.util.NetUtil;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.internal.ObjectUtil;
 
 import java.net.URI;
 import java.nio.channels.ClosedChannelException;
@@ -233,9 +234,7 @@ public abstract class WebSocketClientHandshaker {
      *            Channel
      */
     public ChannelFuture handshake(Channel channel) {
-        if (channel == null) {
-            throw new NullPointerException("channel");
-        }
+        ObjectUtil.checkNotNull(channel, "channel");
         return handshake(channel, channel.newPromise());
     }
 
@@ -325,9 +324,9 @@ public abstract class WebSocketClientHandshaker {
         } // else mixed cases - which are all errors
 
         if (!protocolValid) {
-            throw new WebSocketHandshakeException(String.format(
+            throw new WebSocketClientHandshakeException(String.format(
                     "Invalid subprotocol. Actual: %s. Expected one of: %s",
-                    receivedProtocol, expectedSubprotocol));
+                    receivedProtocol, expectedSubprotocol), response);
         }
 
         setHandshakeComplete();
@@ -500,9 +499,7 @@ public abstract class WebSocketClientHandshaker {
      *            Closing Frame that was received
      */
     public ChannelFuture close(Channel channel, CloseWebSocketFrame frame) {
-        if (channel == null) {
-            throw new NullPointerException("channel");
-        }
+        ObjectUtil.checkNotNull(channel, "channel");
         return close(channel, frame, channel.newPromise());
     }
 
@@ -517,9 +514,7 @@ public abstract class WebSocketClientHandshaker {
      *            the {@link ChannelPromise} to be notified when the closing handshake is done
      */
     public ChannelFuture close(Channel channel, CloseWebSocketFrame frame, ChannelPromise promise) {
-        if (channel == null) {
-            throw new NullPointerException("channel");
-        }
+        ObjectUtil.checkNotNull(channel, "channel");
         channel.writeAndFlush(frame, promise);
         applyForceCloseTimeout(channel, promise);
         return promise;
@@ -571,12 +566,9 @@ public abstract class WebSocketClientHandshaker {
         }
 
         String path = wsURL.getRawPath();
+        path = path == null || path.isEmpty() ? "/" : path;
         String query = wsURL.getRawQuery();
-        if (query != null && !query.isEmpty()) {
-            path = path + '?' + query;
-        }
-
-        return path == null || path.isEmpty() ? "/" : path;
+        return query != null && !query.isEmpty() ? path + '?' + query : path;
     }
 
     static CharSequence websocketHostValue(URI wsURL) {
@@ -598,7 +590,7 @@ public abstract class WebSocketClientHandshaker {
         }
 
         // if the port is not standard (80/443) its needed to add the port to the header.
-        // See http://tools.ietf.org/html/rfc6454#section-6.2
+        // See https://tools.ietf.org/html/rfc6454#section-6.2
         return NetUtil.toSocketAddressString(host, port);
     }
 
@@ -623,7 +615,7 @@ public abstract class WebSocketClientHandshaker {
 
         if (port != defaultPort && port != -1) {
             // if the port is not standard (80/443) its needed to add the port to the header.
-            // See http://tools.ietf.org/html/rfc6454#section-6.2
+            // See https://tools.ietf.org/html/rfc6454#section-6.2
             return schemePrefix + NetUtil.toSocketAddressString(host, port);
         }
         return schemePrefix + host;

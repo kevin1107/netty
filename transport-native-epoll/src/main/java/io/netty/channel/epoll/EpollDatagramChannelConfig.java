@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,6 +17,7 @@ package io.netty.channel.epoll;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.channel.ChannelConfig;
 import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.FixedRecvByteBufAllocator;
@@ -433,7 +434,7 @@ public final class EpollDatagramChannelConfig extends EpollChannelConfig impleme
     }
 
     /**
-     * Returns {@code true} if <a href="http://man7.org/linux/man-pages/man7/ip.7.html">IP_TRANSPARENT</a> is enabled,
+     * Returns {@code true} if <a href="https://man7.org/linux/man-pages/man7/ip.7.html">IP_TRANSPARENT</a> is enabled,
      * {@code false} otherwise.
      */
     public boolean isIpTransparent() {
@@ -445,7 +446,7 @@ public final class EpollDatagramChannelConfig extends EpollChannelConfig impleme
     }
 
     /**
-     * If {@code true} is used <a href="http://man7.org/linux/man-pages/man7/ip.7.html">IP_TRANSPARENT</a> is enabled,
+     * If {@code true} is used <a href="https://man7.org/linux/man-pages/man7/ip.7.html">IP_TRANSPARENT</a> is enabled,
      * {@code false} for disable it. Default is disabled.
      */
     public EpollDatagramChannelConfig setIpTransparent(boolean ipTransparent) {
@@ -458,7 +459,7 @@ public final class EpollDatagramChannelConfig extends EpollChannelConfig impleme
     }
 
     /**
-     * Returns {@code true} if <a href="http://man7.org/linux/man-pages/man7/ip.7.html">IP_FREEBIND</a> is enabled,
+     * Returns {@code true} if <a href="https://man7.org/linux/man-pages/man7/ip.7.html">IP_FREEBIND</a> is enabled,
      * {@code false} otherwise.
      */
     public boolean isFreeBind() {
@@ -470,7 +471,7 @@ public final class EpollDatagramChannelConfig extends EpollChannelConfig impleme
     }
 
     /**
-     * If {@code true} is used <a href="http://man7.org/linux/man-pages/man7/ip.7.html">IP_FREEBIND</a> is enabled,
+     * If {@code true} is used <a href="https://man7.org/linux/man-pages/man7/ip.7.html">IP_FREEBIND</a> is enabled,
      * {@code false} for disable it. Default is disabled.
      */
     public EpollDatagramChannelConfig setFreeBind(boolean freeBind) {
@@ -483,7 +484,7 @@ public final class EpollDatagramChannelConfig extends EpollChannelConfig impleme
     }
 
     /**
-     * Returns {@code true} if <a href="http://man7.org/linux/man-pages/man7/ip.7.html">IP_RECVORIGDSTADDR</a> is
+     * Returns {@code true} if <a href="https://man7.org/linux/man-pages/man7/ip.7.html">IP_RECVORIGDSTADDR</a> is
      * enabled, {@code false} otherwise.
      */
     public boolean isIpRecvOrigDestAddr() {
@@ -495,7 +496,7 @@ public final class EpollDatagramChannelConfig extends EpollChannelConfig impleme
     }
 
     /**
-     * If {@code true} is used <a href="http://man7.org/linux/man-pages/man7/ip.7.html">IP_RECVORIGDSTADDR</a> is
+     * If {@code true} is used <a href="https://man7.org/linux/man-pages/man7/ip.7.html">IP_RECVORIGDSTADDR</a> is
      * enabled, {@code false} for disable it. Default is disabled.
      */
     public EpollDatagramChannelConfig setIpRecvOrigDestAddr(boolean ipTransparent) {
@@ -525,5 +526,11 @@ public final class EpollDatagramChannelConfig extends EpollChannelConfig impleme
      */
     public int getMaxDatagramPayloadSize() {
         return maxDatagramSize;
+    }
+
+    @Override
+    public EpollDatagramChannelConfig setMaxMessagesPerWrite(int maxMessagesPerWrite) {
+        super.setMaxMessagesPerWrite(maxMessagesPerWrite);
+        return this;
     }
 }
