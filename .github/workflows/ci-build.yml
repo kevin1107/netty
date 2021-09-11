@@ -1,14 +1,32 @@
+# ----------------------------------------------------------------------------
+# Copyright 2021 The Netty Project
+#
+# The Netty Project licenses this file to you under the Apache License,
+# version 2.0 (the "License"); you may not use this file except in compliance
+# with the License. You may obtain a copy of the License at:
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+# ----------------------------------------------------------------------------
 name: Build project
 
 on:
   push:
-    branches: [ "4.1"]
+    branches: [ "main"]
 
   schedule:
     - cron: '30 1 * * 1'  # At 01:30 on Monday, every Monday.
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+
+env:
+  MAVEN_OPTS: -Dhttp.keepAlive=false -Dmaven.wagon.http.pool=false -Dmaven.wagon.http.retryhandler.count=5 -Dmaven.wagon.httpconnectionManager.ttlSeconds=240
 
 jobs:
   build:
@@ -25,23 +43,23 @@ jobs:
       - uses: actions/checkout@v2
 
       # Cache .m2/repository
-      - uses: actions/cache@v2
-        env:
-          cache-name: build-${{ matrix.setup }}-cache-m2-repository
+      - name: Cache local Maven repository
+        uses: actions/cache@v2
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/pom.xml') }}
+          key: ${{ runner.os }}-maven-${{ matrix.setup }}-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}-
-            ${{ runner.os }}-build-
+            ${{ runner.os }}-maven-${{ matrix.setup }}-
+            ${{ runner.os }}-maven-
 
       # Enable caching of Docker layers
       - uses: satackey/action-docker-layer-caching@v0.0.11
         continue-on-error: true
         with:
-          key: build-${{ matrix.setup }}-docker-cache-{hash}
+          key: build-docker-cache-${{ matrix.setup }}-{hash}
           restore-keys: |
-            build-${{ matrix.setup }}-docker-cache-
+            build-docker-cache-${{ matrix.setup }}-
+            build-docker-cache-
 
       - name: Build docker image
         run: docker-compose ${{ matrix.docker-compose-build }}
@@ -56,4 +74,6 @@ jobs:
         if: ${{ failure() }}
         with:
           name: target
-          path: "**/target/"
+          path: |
+            **/target/surefire-reports/
+            **/hs_err*.log

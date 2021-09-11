@@ -43,14 +43,21 @@ public abstract class AbstractMemoryHttpData extends AbstractHttpData {
 
     protected AbstractMemoryHttpData(String name, Charset charset, long size) {
         super(name, charset, size);
+        byteBuf = EMPTY_BUFFER;
     }
 
     @Override
     public void setContent(ByteBuf buffer) throws IOException {
         ObjectUtil.checkNotNull(buffer, "buffer");
         long localsize = buffer.readableBytes();
-        checkSize(localsize);
+        try {
+            checkSize(localsize);
+        } catch (IOException e) {
+            buffer.release();
+            throw e;
+        }
         if (definedSize > 0 && definedSize < localsize) {
+            buffer.release();
             throw new IOException("Out of size: " + localsize + " > " +
                     definedSize);
         }
@@ -98,8 +105,14 @@ public abstract class AbstractMemoryHttpData extends AbstractHttpData {
             throws IOException {
         if (buffer != null) {
             long localsize = buffer.readableBytes();
-            checkSize(size + localsize);
+            try {
+                checkSize(size + localsize);
+            } catch (IOException e) {
+                buffer.release();
+                throw e;
+            }
             if (definedSize > 0 && definedSize < size + localsize) {
+                buffer.release();
                 throw new IOException("Out of size: " + (size + localsize) +
                         " > " + definedSize);
             }
@@ -109,6 +122,10 @@ public abstract class AbstractMemoryHttpData extends AbstractHttpData {
             } else if (localsize == 0) {
                 // Nothing to add and byteBuf already exists
                 buffer.release();
+            } else if (byteBuf.readableBytes() == 0) {
+                // Previous buffer is empty, so just replace it
+                byteBuf.release();
+                byteBuf = buffer;
             } else if (byteBuf instanceof CompositeByteBuf) {
                 CompositeByteBuf cbb = (CompositeByteBuf) byteBuf;
                 cbb.addComponent(true, buffer);

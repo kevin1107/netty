@@ -31,13 +31,13 @@ import io.netty.channel.ChannelPromise;
 import io.netty.channel.ConnectTimeoutException;
 import io.netty.channel.EventLoop;
 import io.netty.channel.RecvByteBufAllocator;
-import io.netty.channel.nio.AbstractNioChannel;
 import io.netty.channel.socket.ChannelInputShutdownEvent;
 import io.netty.channel.socket.ChannelInputShutdownReadComplete;
 import io.netty.channel.socket.SocketChannelConfig;
 import io.netty.channel.unix.FileDescriptor;
 import io.netty.channel.unix.UnixChannel;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.Future;
 
 import java.io.IOException;
 import java.net.ConnectException;
@@ -48,7 +48,6 @@ import java.nio.channels.AlreadyConnectedException;
 import java.nio.channels.ConnectionPendingException;
 import java.nio.channels.NotYetConnectedException;
 import java.nio.channels.UnresolvedAddressException;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static io.netty.channel.internal.ChannelUtils.WRITE_STATUS_SNDBUF_FULL;
@@ -62,7 +61,7 @@ abstract class AbstractKQueueChannel extends AbstractChannel implements UnixChan
      * connection attempts will fail.
      */
     private ChannelPromise connectPromise;
-    private ScheduledFuture<?> connectTimeoutFuture;
+    private Future<?> connectTimeoutFuture;
     private SocketAddress requestedRemoteAddress;
 
     final BsdSocket socket;
@@ -391,7 +390,7 @@ abstract class AbstractKQueueChannel extends AbstractChannel implements UnixChan
         final void readReadyFinally(ChannelConfig config) {
             maybeMoreDataToRead = allocHandle.maybeMoreDataToRead();
 
-            if (allocHandle.isReadEOF() || (readPending && maybeMoreDataToRead)) {
+            if (allocHandle.isReadEOF() || readPending && maybeMoreDataToRead) {
                 // trigger a read again as there may be something left to read and because of ET we
                 // will not get notified again until we read everything from the socket
                 //
@@ -700,7 +699,7 @@ abstract class AbstractKQueueChannel extends AbstractChannel implements UnixChan
             socket.bind(localAddress);
         }
 
-        boolean connected = doConnect0(remoteAddress);
+        boolean connected = doConnect0(remoteAddress, localAddress);
         if (connected) {
             remote = remoteSocketAddr == null?
                     remoteAddress : computeRemoteAddr(remoteSocketAddr, socket.remoteAddress());
@@ -712,10 +711,10 @@ abstract class AbstractKQueueChannel extends AbstractChannel implements UnixChan
         return connected;
     }
 
-    private boolean doConnect0(SocketAddress remote) throws Exception {
+    protected boolean doConnect0(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception {
         boolean success = false;
         try {
-            boolean connected = socket.connect(remote);
+            boolean connected = socket.connect(remoteAddress);
             if (!connected) {
                 writeFilter(true);
             }

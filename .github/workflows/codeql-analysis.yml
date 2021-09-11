@@ -1,3 +1,18 @@
+# ----------------------------------------------------------------------------
+# Copyright 2021 The Netty Project
+#
+# The Netty Project licenses this file to you under the Apache License,
+# version 2.0 (the "License"); you may not use this file except in compliance
+# with the License. You may obtain a copy of the License at:
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+# ----------------------------------------------------------------------------
 # For most projects, this workflow file will not need changing; you simply need
 # to commit it to your repository.
 #
@@ -7,12 +22,15 @@ name: "CodeQL"
 
 on:
   push:
-    branches: ["4.1", master]
+    branches: ["4.1", main]
   pull_request:
     # The branches below must be a subset of the branches above
-    branches: ["4.1", master]
+    branches: ["4.1", main]
   schedule:
     - cron: '0 13 * * 3'
+
+env:
+  MAVEN_OPTS: -Dhttp.keepAlive=false -Dmaven.wagon.http.pool=false -Dmaven.wagon.http.retryhandler.count=5 -Dmaven.wagon.httpconnectionManager.ttlSeconds=240
 
 jobs:
   analyze:
@@ -37,15 +55,14 @@ jobs:
         fetch-depth: 2
 
     # Cache .m2/repository
-    - uses: actions/cache@v2
-      env:
-        cache-name: verify-cache-m2-repository
+    - name: Cache local Maven repository
+      uses: actions/cache@v2
       with:
         path: ~/.m2/repository
-        key: ${{ runner.os }}-pr-${{ env.cache-name }}-${{ hashFiles('**/pom.xml') }}
+        key: ${{ runner.os }}-maven-${{ matrix.language }} ${{ hashFiles('**/pom.xml') }}
         restore-keys: |
-          ${{ runner.os }}-pr-${{ env.cache-name }}-
-          ${{ runner.os }}-pr-
+          ${{ runner.os }}-maven-${{ matrix.language }}
+          ${{ runner.os }}-maven-
 
     # If this run was triggered by a pull request event, then checkout
     # the head of the pull request instead of the merge commit.
@@ -74,7 +91,8 @@ jobs:
     #    and modify them (or add more) to build your code if your project
     #    uses a compiled language
 
-    - run: ./mvnw clean package -DskipTests=true -ntp -B
+    - name: Compile project
+      run: ./mvnw -B -ntp clean package -DskipTests=true
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v1

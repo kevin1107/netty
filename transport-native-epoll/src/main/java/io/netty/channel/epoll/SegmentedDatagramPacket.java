@@ -16,18 +16,14 @@
 package io.netty.channel.epoll;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.socket.DatagramPacket;
-import io.netty.util.internal.ObjectUtil;
 
 import java.net.InetSocketAddress;
 
 /**
- * Allows to use <a href="https://blog.cloudflare.com/accelerating-udp-packet-transmission-for-quic/">GSO</a>
- * if the underlying OS supports it. Before instance and use this class you should check {@link #isSupported()}.
+ * @deprecated use {@link io.netty.channel.unix.SegmentedDatagramPacket}.
  */
-public final class SegmentedDatagramPacket extends DatagramPacket {
-
-    private final int segmentSize;
+@Deprecated
+public final class SegmentedDatagramPacket extends io.netty.channel.unix.SegmentedDatagramPacket {
 
     /**
      * Create a new instance.
@@ -37,9 +33,8 @@ public final class SegmentedDatagramPacket extends DatagramPacket {
      * @param recipient     the recipient.
      */
     public SegmentedDatagramPacket(ByteBuf data, int segmentSize, InetSocketAddress recipient) {
-        super(data, recipient);
+        super(data, segmentSize, recipient);
         checkIsSupported();
-        this.segmentSize = ObjectUtil.checkPositive(segmentSize, "segmentSize");
     }
 
     /**
@@ -51,9 +46,8 @@ public final class SegmentedDatagramPacket extends DatagramPacket {
      */
     public SegmentedDatagramPacket(ByteBuf data, int segmentSize,
                                    InetSocketAddress recipient, InetSocketAddress sender) {
-        super(data, recipient, sender);
+        super(data, segmentSize, recipient, sender);
         checkIsSupported();
-        this.segmentSize = ObjectUtil.checkPositive(segmentSize, "segmentSize");
     }
 
     /**
@@ -65,33 +59,24 @@ public final class SegmentedDatagramPacket extends DatagramPacket {
                 Native.IS_SUPPORTING_SENDMMSG && Native.IS_SUPPORTING_UDP_SEGMENT;
     }
 
-    /**
-     * Return the size of each segment (the last segment can be smaller).
-     *
-     * @return size of segments.
-     */
-    public int segmentSize() {
-        return segmentSize;
-    }
-
     @Override
     public SegmentedDatagramPacket copy() {
-        return new SegmentedDatagramPacket(content().copy(), segmentSize, recipient(), sender());
+        return new SegmentedDatagramPacket(content().copy(), segmentSize(), recipient(), sender());
     }
 
     @Override
     public SegmentedDatagramPacket duplicate() {
-        return new SegmentedDatagramPacket(content().duplicate(), segmentSize, recipient(), sender());
+        return new SegmentedDatagramPacket(content().duplicate(), segmentSize(), recipient(), sender());
     }
 
     @Override
     public SegmentedDatagramPacket retainedDuplicate() {
-        return new SegmentedDatagramPacket(content().retainedDuplicate(), segmentSize, recipient(), sender());
+        return new SegmentedDatagramPacket(content().retainedDuplicate(), segmentSize(), recipient(), sender());
     }
 
     @Override
     public SegmentedDatagramPacket replace(ByteBuf content) {
-        return new SegmentedDatagramPacket(content, segmentSize, recipient(), sender());
+        return new SegmentedDatagramPacket(content, segmentSize(), recipient(), sender());
     }
 
     @Override

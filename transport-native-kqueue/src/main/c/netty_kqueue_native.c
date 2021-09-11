@@ -60,6 +60,12 @@
 #ifndef NOTE_DISCONNECTED
 #define NOTE_DISCONNECTED 0x00001000
 #endif /* NOTE_DISCONNECTED */
+#ifndef CONNECT_RESUME_ON_READ_WRITE
+#define CONNECT_RESUME_ON_READ_WRITE 0x1
+#endif /* CONNECT_RESUME_ON_READ_WRITE */
+#ifndef CONNECT_DATA_IDEMPOTENT
+#define CONNECT_DATA_IDEMPOTENT 0x2
+#endif /* CONNECT_DATA_IDEMPOTENT */
 #else
 #ifndef EVFILT_SOCK
 #define EVFILT_SOCK 0 // Disabled
@@ -73,6 +79,12 @@
 #ifndef NOTE_DISCONNECTED
 #define NOTE_DISCONNECTED 0
 #endif /* NOTE_DISCONNECTED */
+#ifndef CONNECT_RESUME_ON_READ_WRITE
+#define CONNECT_RESUME_ON_READ_WRITE 0
+#endif /* CONNECT_RESUME_ON_READ_WRITE */
+#ifndef CONNECT_DATA_IDEMPOTENT
+#define CONNECT_DATA_IDEMPOTENT 0
+#endif /* CONNECT_DATA_IDEMPOTENT */
 #endif /* __APPLE__ */
 
 static clockid_t waitClockId = 0; // initialized by netty_unix_util_initialize_wait_clock
@@ -247,6 +259,14 @@ static jshort netty_kqueue_native_noteDisconnected(JNIEnv* env, jclass clazz) {
    return NOTE_DISCONNECTED;
 }
 
+static jint netty_kqueue_bsdsocket_connectResumeOnReadWrite(JNIEnv *env) {
+    return CONNECT_RESUME_ON_READ_WRITE;
+}
+
+static jint netty_kqueue_bsdsocket_connectDataIdempotent(JNIEnv *env) {
+    return CONNECT_DATA_IDEMPOTENT;
+}
+
 // JNI Method Registration Table Begin
 static const JNINativeMethod statically_referenced_fixed_method_table[] = {
   { "evfiltRead", "()S", (void *) netty_kqueue_native_evfiltRead },
@@ -262,7 +282,9 @@ static const JNINativeMethod statically_referenced_fixed_method_table[] = {
   { "evError", "()S", (void *) netty_kqueue_native_evError },
   { "noteReadClosed", "()S", (void *) netty_kqueue_native_noteReadClosed },
   { "noteConnReset", "()S", (void *) netty_kqueue_native_noteConnReset },
-  { "noteDisconnected", "()S", (void *) netty_kqueue_native_noteDisconnected }
+  { "noteDisconnected", "()S", (void *) netty_kqueue_native_noteDisconnected },
+  { "connectResumeOnReadWrite", "()I", (void *) netty_kqueue_bsdsocket_connectResumeOnReadWrite },
+  { "connectDataIdempotent", "()I", (void *) netty_kqueue_bsdsocket_connectDataIdempotent }
 };
 static const jint statically_referenced_fixed_method_table_size = sizeof(statically_referenced_fixed_method_table) / sizeof(statically_referenced_fixed_method_table[0]);
 static const JNINativeMethod fixed_method_table[] = {
@@ -281,6 +303,8 @@ static const JNINativeMethod fixed_method_table[] = {
 static const jint fixed_method_table_size = sizeof(fixed_method_table) / sizeof(fixed_method_table[0]);
 // JNI Method Registration Table End
 
+// IMPORTANT: If you add any NETTY_JNI_UTIL_LOAD_CLASS or NETTY_JNI_UTIL_FIND_CLASS calls you also need to update
+//            Native to reflect that.
 static jint netty_kqueue_native_JNI_OnLoad(JNIEnv* env, const char* packagePrefix) {
     int staticallyRegistered = 0;
     int nativeRegistered = 0;
@@ -341,21 +365,22 @@ error:
    return JNI_ERR;
 }
 
-static void netty_kqueue_native_JNI_OnUnload(JNIEnv* env, const char* packagePrefix) {
-    netty_kqueue_bsdsocket_JNI_OnUnLoad(env, packagePrefix);
-    netty_kqueue_eventarray_JNI_OnUnLoad(env, packagePrefix);
+static void netty_kqueue_native_JNI_OnUnload(JNIEnv* env) {
+    netty_kqueue_bsdsocket_JNI_OnUnLoad(env, staticPackagePrefix);
+    netty_kqueue_eventarray_JNI_OnUnLoad(env, staticPackagePrefix);
 
     if (register_unix_called == 1) {
         register_unix_called = 0;
         netty_unix_unregister(env, staticPackagePrefix);
     }
+
+    netty_jni_util_unregister_natives(env, staticPackagePrefix, STATICALLY_CLASSNAME);
+    netty_jni_util_unregister_natives(env, staticPackagePrefix, NATIVE_CLASSNAME);
+
     if (staticPackagePrefix != NULL) {
         free((void *) staticPackagePrefix);
         staticPackagePrefix = NULL;
     }
-
-    netty_jni_util_unregister_natives(env, packagePrefix, STATICALLY_CLASSNAME);
-    netty_jni_util_unregister_natives(env, packagePrefix, NATIVE_CLASSNAME);
 }
 
 // We build with -fvisibility=hidden so ensure we mark everything that needs to be visible with JNIEXPORT

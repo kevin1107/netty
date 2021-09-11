@@ -119,8 +119,8 @@ final class NativeDatagramPacketArray {
                 DatagramPacket packet = (DatagramPacket) msg;
                 ByteBuf buf = packet.content();
                 int segmentSize = 0;
-                if (packet instanceof SegmentedDatagramPacket) {
-                    int seg = ((SegmentedDatagramPacket) packet).segmentSize();
+                if (packet instanceof io.netty.channel.unix.SegmentedDatagramPacket) {
+                    int seg = ((io.netty.channel.unix.SegmentedDatagramPacket) packet).segmentSize();
                     // We only need to tell the kernel that we want to use UDP_SEGMENT if there are multiple
                     // segments in the packet.
                     if (buf.readableBytes() > seg) {
@@ -142,6 +142,18 @@ final class NativeDatagramPacketArray {
         }
     }
 
+    private static InetSocketAddress newAddress(byte[] addr, int addrLen, int port, int scopeId, byte[] ipv4Bytes)
+            throws UnknownHostException {
+        final InetAddress address;
+        if (addrLen == ipv4Bytes.length) {
+            System.arraycopy(addr, 0, ipv4Bytes, 0, addrLen);
+            address = InetAddress.getByAddress(ipv4Bytes);
+        } else {
+            address = Inet6Address.getByAddress(null, addr, scopeId);
+        }
+        return new InetSocketAddress(address, port);
+    }
+
     /**
      * Used to pass needed data to JNI.
      */
@@ -152,46 +164,57 @@ final class NativeDatagramPacketArray {
         private long memoryAddress;
         private int count;
 
-        private final byte[] addr = new byte[16];
+        private final byte[] senderAddr = new byte[16];
+        private int senderAddrLen;
+        private int senderScopeId;
+        private int senderPort;
+
+        private final byte[] recipientAddr = new byte[16];
+        private int recipientAddrLen;
+        private int recipientScopeId;
+        private int recipientPort;
 
         private int segmentSize;
-        private int addrLen;
-        private int scopeId;
-        private int port;
 
         private void init(long memoryAddress, int count, int segmentSize, InetSocketAddress recipient) {
             this.memoryAddress = memoryAddress;
             this.count = count;
             this.segmentSize = segmentSize;
 
+            this.senderScopeId = 0;
+            this.senderPort = 0;
+            this.senderAddrLen = 0;
+
             if (recipient == null) {
-                this.scopeId = 0;
-                this.port = 0;
-                this.addrLen = 0;
+                this.recipientScopeId = 0;
+                this.recipientPort = 0;
+                this.recipientAddrLen = 0;
             } else {
                 InetAddress address = recipient.getAddress();
                 if (address instanceof Inet6Address) {
-                    System.arraycopy(address.getAddress(), 0, addr, 0, addr.length);
-                    scopeId = ((Inet6Address) address).getScopeId();
+                    System.arraycopy(address.getAddress(), 0, recipientAddr, 0, recipientAddr.length);
+                    recipientScopeId = ((Inet6Address) address).getScopeId();
                 } else {
-                    copyIpv4MappedIpv6Address(address.getAddress(), addr);
-                    scopeId = 0;
+                    copyIpv4MappedIpv6Address(address.getAddress(), recipientAddr);
+                    recipientScopeId = 0;
                 }
-                addrLen = addr.length;
-                port = recipient.getPort();
+                recipientAddrLen = recipientAddr.length;
+                recipientPort = recipient.getPort();
             }
         }
 
-        DatagramPacket newDatagramPacket(ByteBuf buffer, InetSocketAddress localAddress) throws UnknownHostException {
-            final InetAddress address;
-            if (addrLen == ipv4Bytes.length) {
-                System.arraycopy(addr, 0, ipv4Bytes, 0, addrLen);
-                address = InetAddress.getByAddress(ipv4Bytes);
-            } else {
-                address = Inet6Address.getByAddress(null, addr, scopeId);
+        DatagramPacket newDatagramPacket(ByteBuf buffer, InetSocketAddress recipient) throws UnknownHostException {
+            InetSocketAddress sender = newAddress(senderAddr, senderAddrLen, senderPort, senderScopeId, ipv4Bytes);
+            if (recipientAddrLen != 0) {
+                recipient = newAddress(recipientAddr, recipientAddrLen, recipientPort, recipientScopeId, ipv4Bytes);
             }
-            return new DatagramPacket(buffer.writerIndex(count),
-                    localAddress, new InetSocketAddress(address, port));
+            buffer.writerIndex(count);
+
+            // UDP_GRO
+            if (segmentSize > 0) {
+                return new SegmentedDatagramPacket(buffer, segmentSize, recipient, sender);
+            }
+            return new DatagramPacket(buffer, recipient, sender);
         }
     }
 }

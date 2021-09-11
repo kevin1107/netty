@@ -73,8 +73,8 @@ final class KQueueEventLoop extends SingleThreadEventLoop {
 
     KQueueEventLoop(EventLoopGroup parent, Executor executor, int maxEvents,
                     SelectStrategy strategy, RejectedExecutionHandler rejectedExecutionHandler,
-                    EventLoopTaskQueueFactory queueFactory) {
-        super(parent, executor, false, newTaskQueue(queueFactory), newTaskQueue(queueFactory),
+                    EventLoopTaskQueueFactory taskQueueFactory, EventLoopTaskQueueFactory tailTaskQueueFactory) {
+        super(parent, executor, false, newTaskQueue(taskQueueFactory), newTaskQueue(tailTaskQueueFactory),
                 rejectedExecutionHandler);
         this.selectStrategy = ObjectUtil.checkNotNull(strategy, "strategy");
         this.kqueueFd = Native.newKQueue();
@@ -298,7 +298,7 @@ final class KQueueEventLoop extends SingleThreadEventLoop {
                     eventList.realloc(false);
                 }
             } catch (Error e) {
-                throw (Error) e;
+                throw e;
             } catch (Throwable t) {
                 handleLoopException(t);
             } finally {
@@ -311,7 +311,7 @@ final class KQueueEventLoop extends SingleThreadEventLoop {
                         }
                     }
                 } catch (Error e) {
-                    throw (Error) e;
+                    throw e;
                 } catch (Throwable t) {
                     handleLoopException(t);
                 }

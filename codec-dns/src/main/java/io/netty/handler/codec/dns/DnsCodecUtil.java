@@ -18,7 +18,6 @@ package io.netty.handler.codec.dns;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
-import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.CorruptedFrameException;
 import io.netty.util.CharsetUtil;
 
@@ -120,7 +119,7 @@ final class DnsCodecUtil {
 
     /**
      * Decompress pointer data.
-     * @param compression comporession data
+     * @param compression compressed data
      * @return decompressed data
      */
     static ByteBuf decompressDomainName(ByteBuf compression) {

@@ -15,6 +15,8 @@
  */
 package io.netty.handler.codec.mqtt;
 
+import static io.netty.util.internal.ObjectUtil.checkPositive;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.mqtt.MqttProperties.MqttPropertyType;
@@ -354,7 +356,7 @@ public final class MqttMessageBuilders {
         private Long maximumPacketSize;
         private int topicAliasMaximum;
         private String reasonString;
-        private MqttProperties.UserProperties userProperties = new MqttProperties.UserProperties();
+        private final MqttProperties.UserProperties userProperties = new MqttProperties.UserProperties();
         private Boolean wildcardSubscriptionAvailable;
         private Boolean subscriptionIdentifiersAvailable;
         private Boolean sharedSubscriptionAvailable;
@@ -433,10 +435,7 @@ public final class MqttMessageBuilders {
         }
 
         public ConnAckPropertiesBuilder receiveMaximum(int value) {
-            if (value <= 0) {
-                throw new IllegalArgumentException("receive maximum property must be > 0");
-            }
-            this.receiveMaximum = value;
+            this.receiveMaximum = checkPositive(value, "value");
             return this;
         }
 
@@ -454,10 +453,7 @@ public final class MqttMessageBuilders {
         }
 
         public ConnAckPropertiesBuilder maximumPacketSize(long size) {
-            if (size <= 0) {
-                throw new IllegalArgumentException("maximum packet size property must be > 0");
-            }
-            this.maximumPacketSize = size;
+            this.maximumPacketSize = checkPositive(size, "size");
             return this;
         }
 

@@ -24,6 +24,7 @@ import io.netty.handler.codec.TooLongFrameException;
 import io.netty.handler.codec.mqtt.MqttDecoder.DecoderState;
 import io.netty.handler.codec.mqtt.MqttProperties.IntegerProperty;
 import io.netty.util.CharsetUtil;
+import io.netty.util.internal.ObjectUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +34,8 @@ import static io.netty.handler.codec.mqtt.MqttCodecUtil.isValidMessageId;
 import static io.netty.handler.codec.mqtt.MqttCodecUtil.isValidPublishTopicName;
 import static io.netty.handler.codec.mqtt.MqttCodecUtil.resetUnusedFields;
 import static io.netty.handler.codec.mqtt.MqttCodecUtil.validateFixedHeader;
+import static io.netty.handler.codec.mqtt.MqttConstant.DEFAULT_MAX_BYTES_IN_MESSAGE;
+import static io.netty.handler.codec.mqtt.MqttConstant.DEFAULT_MAX_CLIENT_ID_LENGTH;
 import static io.netty.handler.codec.mqtt.MqttSubscriptionOption.RetainedHandlingPolicy;
 
 /**
@@ -44,8 +47,6 @@ import static io.netty.handler.codec.mqtt.MqttSubscriptionOption.RetainedHandlin
  * version specified in the CONNECT message that first goes through the channel.
  */
 public final class MqttDecoder extends ReplayingDecoder<DecoderState> {
-
-    private static final int DEFAULT_MAX_BYTES_IN_MESSAGE = 8092;
 
     /**
      * States of the decoder.
@@ -64,14 +65,20 @@ public final class MqttDecoder extends ReplayingDecoder<DecoderState> {
     private int bytesRemainingInVariablePart;
 
     private final int maxBytesInMessage;
+    private final int maxClientIdLength;
 
     public MqttDecoder() {
-      this(DEFAULT_MAX_BYTES_IN_MESSAGE);
+      this(DEFAULT_MAX_BYTES_IN_MESSAGE, DEFAULT_MAX_CLIENT_ID_LENGTH);
     }
 
     public MqttDecoder(int maxBytesInMessage) {
+        this(maxBytesInMessage, DEFAULT_MAX_CLIENT_ID_LENGTH);
+    }
+
+    public MqttDecoder(int maxBytesInMessage, int maxClientIdLength) {
         super(DecoderState.READ_FIXED_HEADER);
-        this.maxBytesInMessage = maxBytesInMessage;
+        this.maxBytesInMessage = ObjectUtil.checkPositive(maxBytesInMessage, "maxBytesInMessage");
+        this.maxClientIdLength = ObjectUtil.checkPositive(maxClientIdLength, "maxClientIdLength");
     }
 
     @Override
@@ -91,6 +98,7 @@ public final class MqttDecoder extends ReplayingDecoder<DecoderState> {
                 final Result<?> decodedVariableHeader = decodeVariableHeader(ctx, buffer, mqttFixedHeader);
                 variableHeader = decodedVariableHeader.value;
                 if (bytesRemainingInVariablePart > maxBytesInMessage) {
+                    buffer.skipBytes(actualReadableBytes());
                     throw new TooLongFrameException("too large message: " + bytesRemainingInVariablePart + " bytes");
                 }
                 bytesRemainingInVariablePart -= decodedVariableHeader.numberOfBytesConsumed;
@@ -108,6 +116,7 @@ public final class MqttDecoder extends ReplayingDecoder<DecoderState> {
                                 buffer,
                                 mqttFixedHeader.messageType(),
                                 bytesRemainingInVariablePart,
+                                maxClientIdLength,
                                 variableHeader);
                 bytesRemainingInVariablePart -= decodedPayload.numberOfBytesConsumed;
                 if (bytesRemainingInVariablePart != 0) {
@@ -144,7 +153,11 @@ public final class MqttDecoder extends ReplayingDecoder<DecoderState> {
     }
 
     /**
-     * Decodes the fixed header. It's one byte for the flags and then variable bytes for the remaining length.
+     * Decodes the fixed header. It's one byte for the flags and then variable
+     * bytes for the remaining length.
+     *
+     * @see
+     * https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/errata01/os/mqtt-v3.1.1-errata01-os-complete.html#_Toc442180841
      *
      * @param buffer the buffer to decode from
      * @return the fixed header
@@ -156,6 +169,59 @@ public final class MqttDecoder extends ReplayingDecoder<DecoderState> {
         boolean dupFlag = (b1 & 0x08) == 0x08;
         int qosLevel = (b1 & 0x06) >> 1;
         boolean retain = (b1 & 0x01) != 0;
+
+        switch (messageType) {
+            case PUBLISH:
+                if (qosLevel == 3) {
+                    throw new DecoderException("Illegal QOS Level in fixed header of PUBLISH message ("
+                            + qosLevel + ')');
+                }
+                break;
+
+            case PUBREL:
+            case SUBSCRIBE:
+            case UNSUBSCRIBE:
+                if (dupFlag) {
+                    throw new DecoderException("Illegal BIT 3 in fixed header of " + messageType
+                            + " message, must be 0, found 1");
+                }
+                if (qosLevel != 1) {
+                    throw new DecoderException("Illegal QOS Level in fixed header of " + messageType
+                            + " message, must be 1, found " + qosLevel);
+                }
+                if (retain) {
+                    throw new DecoderException("Illegal BIT 0 in fixed header of " + messageType
+                            + " message, must be 0, found 1");
+                }
+                break;
+
+            case AUTH:
+            case CONNACK:
+            case CONNECT:
+            case DISCONNECT:
+            case PINGREQ:
+            case PINGRESP:
+            case PUBACK:
+            case PUBCOMP:
+            case PUBREC:
+            case SUBACK:
+            case UNSUBACK:
+                if (dupFlag) {
+                    throw new DecoderException("Illegal BIT 3 in fixed header of " + messageType
+                            + " message, must be 0, found 1");
+                }
+                if (qosLevel != 0) {
+                    throw new DecoderException("Illegal BIT 2 or 1 in fixed header of " + messageType
+                            + " message, must be 0, found " + qosLevel);
+                }
+                if (retain) {
+                    throw new DecoderException("Illegal BIT 0 in fixed header of " + messageType
+                            + " message, must be 0, found 1");
+                }
+                break;
+            default:
+                throw new DecoderException("Unknown message type, do not know how to validate fixed header");
+        }
 
         int remainingLength = 0;
         int multiplier = 1;
@@ -434,10 +500,11 @@ public final class MqttDecoder extends ReplayingDecoder<DecoderState> {
             ByteBuf buffer,
             MqttMessageType messageType,
             int bytesRemainingInVariablePart,
+            int maxClientIdLength,
             Object variableHeader) {
         switch (messageType) {
             case CONNECT:
-                return decodeConnectionPayload(buffer, (MqttConnectVariableHeader) variableHeader);
+                return decodeConnectionPayload(buffer, maxClientIdLength, (MqttConnectVariableHeader) variableHeader);
 
             case SUBSCRIBE:
                 return decodeSubscribePayload(buffer, bytesRemainingInVariablePart);
@@ -462,12 +529,13 @@ public final class MqttDecoder extends ReplayingDecoder<DecoderState> {
 
     private static Result<MqttConnectPayload> decodeConnectionPayload(
             ByteBuf buffer,
+            int maxClientIdLength,
             MqttConnectVariableHeader mqttConnectVariableHeader) {
         final Result<String> decodedClientId = decodeString(buffer);
         final String decodedClientIdValue = decodedClientId.value;
         final MqttVersion mqttVersion = MqttVersion.fromProtocolNameAndLevel(mqttConnectVariableHeader.name(),
                 (byte) mqttConnectVariableHeader.version());
-        if (!isValidClientId(mqttVersion, decodedClientIdValue)) {
+        if (!isValidClientId(mqttVersion, maxClientIdLength, decodedClientIdValue)) {
             throw new MqttIdentifierRejectedException("invalid clientIdentifier: " + decodedClientIdValue);
         }
         int numberOfBytesConsumed = decodedClientId.numberOfBytesConsumed;

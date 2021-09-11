@@ -15,15 +15,26 @@
 */
 package io.netty.util;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.function.Executable;
 
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class RecyclerTest {
 
@@ -44,7 +55,8 @@ public class RecyclerTest {
         };
     }
 
-    @Test(timeout = 5000L)
+    @Test
+    @Timeout(value = 5000, unit = TimeUnit.MILLISECONDS)
     public void testThreadCanBeCollectedEvenIfHandledObjectIsReferenced() throws Exception {
         final Recycler<HandledObject> recycler = newRecycler(1024);
         final AtomicBoolean collected = new AtomicBoolean();
@@ -81,15 +93,20 @@ public class RecyclerTest {
         reference.getAndSet(null).recycle();
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void testMultipleRecycle() {
         Recycler<HandledObject> recycler = newRecycler(1024);
-        HandledObject object = recycler.get();
+        final HandledObject object = recycler.get();
         object.recycle();
-        object.recycle();
+        assertThrows(IllegalStateException.class, new Executable() {
+            @Override
+            public void execute() {
+                object.recycle();
+            }
+        });
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void testMultipleRecycleAtDifferentThread() throws InterruptedException {
         Recycler<HandledObject> recycler = newRecycler(1024);
         final HandledObject object = recycler.get();
@@ -119,9 +136,7 @@ public class RecyclerTest {
         HandledObject b = recycler.get();
         assertNotSame(a, b);
         IllegalStateException exception = exceptionStore.get();
-        if (exception != null) {
-            throw exception;
-        }
+        assertNotNull(exception);
     }
 
     @Test
@@ -307,9 +322,9 @@ public class RecyclerTest {
             objects[i] = null;
         }
 
-        assertTrue("The threadLocalCapacity (" + recycler.threadLocalCapacity() + ") must be <= maxCapacity ("
-                + maxCapacity + ") as we not pool all new handles internally",
-                maxCapacity >= recycler.threadLocalCapacity());
+        assertTrue(maxCapacity >= recycler.threadLocalCapacity(),
+                "The threadLocalCapacity (" + recycler.threadLocalCapacity() + ") must be <= maxCapacity ("
+                + maxCapacity + ") as we not pool all new handles internally");
     }
 
     @Test
@@ -330,6 +345,43 @@ public class RecyclerTest {
 
         assertSame(recycler.get(), o);
         assertNotSame(recycler.get(), o2);
+    }
+
+    @Test
+    public void testRecycleAtTwoThreadsMulti() throws Exception {
+        final Recycler<HandledObject> recycler = newRecycler(256);
+        final HandledObject o = recycler.get();
+
+        ExecutorService single = Executors.newSingleThreadExecutor();
+
+        final CountDownLatch latch1 = new CountDownLatch(1);
+        single.execute(new Runnable() {
+            @Override
+            public void run() {
+                o.recycle();
+                latch1.countDown();
+            }
+        });
+        assertTrue(latch1.await(100, TimeUnit.MILLISECONDS));
+        final HandledObject o2 = recycler.get();
+        // Always recycler the first object, that is Ok
+        assertSame(o2, o);
+
+        final CountDownLatch latch2 = new CountDownLatch(1);
+        single.execute(new Runnable() {
+            @Override
+            public void run() {
+                //The object should be recycled
+                o2.recycle();
+                latch2.countDown();
+            }
+        });
+        assertTrue(latch2.await(100, TimeUnit.MILLISECONDS));
+
+        // It should be the same object, right?
+        final HandledObject o3 = recycler.get();
+        assertSame(o3, o);
+        single.shutdown();
     }
 
     @Test
@@ -416,9 +468,10 @@ public class RecyclerTest {
         }
 
         // The implementation uses maxCapacity / 2 as limit per WeakOrderQueue
-        assertTrue("The instances count (" +  instancesCount.get() + ") must be <= array.length (" + array.length
+        assertTrue(array.length - maxCapacity / 2 <= instancesCount.get(),
+                "The instances count (" +  instancesCount.get() + ") must be <= array.length (" + array.length
                 + ") - maxCapacity (" + maxCapacity + ") / 2 as we not pool all new handles" +
-                " internally", array.length - maxCapacity / 2 <= instancesCount.get());
+                " internally");
     }
 
     static final class HandledObject {

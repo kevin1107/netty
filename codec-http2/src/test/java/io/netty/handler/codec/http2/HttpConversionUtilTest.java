@@ -17,9 +17,12 @@ package io.netty.handler.codec.http2;
 
 import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.util.AsciiString;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.CONNECTION;
 import static io.netty.handler.codec.http.HttpHeaderNames.COOKIE;
@@ -31,13 +34,28 @@ import static io.netty.handler.codec.http.HttpHeaderNames.TRANSFER_ENCODING;
 import static io.netty.handler.codec.http.HttpHeaderNames.UPGRADE;
 import static io.netty.handler.codec.http.HttpHeaderValues.GZIP;
 import static io.netty.handler.codec.http.HttpHeaderValues.TRAILERS;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class HttpConversionUtilTest {
+
+    @Test
+    public void connectNoPath() throws Exception {
+        String authority = "netty.io:80";
+        Http2Headers headers = new DefaultHttp2Headers();
+        headers.authority(authority);
+        headers.method(HttpMethod.CONNECT.asciiName());
+        HttpRequest request = HttpConversionUtil.toHttpRequest(0, headers, true);
+        assertNotNull(request);
+        assertEquals(authority, request.uri());
+        assertEquals(authority, request.headers().get(HOST));
+    }
+
     @Test
     public void setHttp2AuthorityWithoutUserInfo() {
         Http2Headers headers = new DefaultHttp2Headers();
@@ -68,9 +86,14 @@ public class HttpConversionUtilTest {
         assertSame(AsciiString.EMPTY_STRING, headers.authority());
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void setHttp2AuthorityWithEmptyAuthority() {
-        HttpConversionUtil.setHttp2Authority("info@", new DefaultHttp2Headers());
+        assertThrows(IllegalArgumentException.class, new Executable() {
+            @Override
+            public void execute() {
+                HttpConversionUtil.setHttp2Authority("info@", new DefaultHttp2Headers());
+            }
+        });
     }
 
     @Test
@@ -122,7 +145,7 @@ public class HttpConversionUtilTest {
     @Test
     public void stripTEHeadersAccountsForOWS() {
         HttpHeaders inHeaders = new DefaultHttpHeaders();
-        inHeaders.add(TE, " " + TRAILERS + " ");
+        inHeaders.add(TE, " " + TRAILERS + ' ');
         Http2Headers out = new DefaultHttp2Headers();
         HttpConversionUtil.toHttp2Headers(inHeaders, out);
         assertSame(TRAILERS, out.get(TE));

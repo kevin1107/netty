@@ -33,10 +33,10 @@ import io.netty.handler.codec.http2.Http2Exception.StreamException;
 import io.netty.handler.codec.http2.LastInboundHandler.Consumer;
 import io.netty.util.AsciiString;
 import io.netty.util.AttributeKey;
-import org.hamcrest.CoreMatchers;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.mockito.ArgumentMatcher;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
@@ -56,13 +56,13 @@ import static io.netty.handler.codec.http2.Http2TestUtil.anyHttp2Settings;
 import static io.netty.handler.codec.http2.Http2TestUtil.assertEqualsAndRelease;
 import static io.netty.handler.codec.http2.Http2TestUtil.bb;
 import static io.netty.util.ReferenceCountUtil.release;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -72,7 +72,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 public abstract class Http2MultiplexTest<C extends Http2FrameCodec> {
     private final Http2Headers request = new DefaultHttp2Headers()
@@ -90,7 +89,7 @@ public abstract class Http2MultiplexTest<C extends Http2FrameCodec> {
     protected abstract C newCodec(TestChannelInitializer childChannelInitializer,  Http2FrameWriter frameWriter);
     protected abstract ChannelHandler newMultiplexer(TestChannelInitializer childChannelInitializer);
 
-    @Before
+    @BeforeEach
     public void setUp() {
         childChannelInitializer = new TestChannelInitializer();
         parentChannel = new EmbeddedChannel();
@@ -130,7 +129,7 @@ public abstract class Http2MultiplexTest<C extends Http2FrameCodec> {
         return eq(codec.ctx);
     }
 
-    @After
+    @AfterEach
     public void tearDown() throws Exception {
         if (childChannelInitializer.handler instanceof LastInboundHandler) {
             ((LastInboundHandler) childChannelInitializer.handler).finishAndReleaseAll();
@@ -224,34 +223,133 @@ public abstract class Http2MultiplexTest<C extends Http2FrameCodec> {
 
     @Test
     public void headerMultipleContentLengthValidationShouldPropagate() {
-        LastInboundHandler inboundHandler = new LastInboundHandler();
+        headerMultipleContentLengthValidationShouldPropagate(false);
+    }
+
+    @Test
+    public void headerMultipleContentLengthValidationShouldPropagateWithEndStream() {
+        headerMultipleContentLengthValidationShouldPropagate(true);
+    }
+
+    private void headerMultipleContentLengthValidationShouldPropagate(boolean endStream) {
+        final LastInboundHandler inboundHandler = new LastInboundHandler();
         request.addLong(HttpHeaderNames.CONTENT_LENGTH, 0);
         request.addLong(HttpHeaderNames.CONTENT_LENGTH, 1);
-        Http2StreamChannel channel = newInboundStream(3, false, inboundHandler);
-        try {
-            inboundHandler.checkException();
-            fail();
-        } catch (Exception e) {
-            assertThat(e, CoreMatchers.<Exception>instanceOf(StreamException.class));
-        }
+        Http2StreamChannel channel = newInboundStream(3, endStream, inboundHandler);
+
+        assertThrows(StreamException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                inboundHandler.checkException();
+            }
+        });
+        assertNull(inboundHandler.readInbound());
+        assertFalse(channel.isActive());
+    }
+
+    @Test
+    public void headerPlusSignContentLengthValidationShouldPropagate() {
+        headerSignContentLengthValidationShouldPropagateWithEndStream(false, false);
+    }
+
+    @Test
+    public void headerPlusSignContentLengthValidationShouldPropagateWithEndStream() {
+        headerSignContentLengthValidationShouldPropagateWithEndStream(false, true);
+    }
+
+    @Test
+    public void headerMinusSignContentLengthValidationShouldPropagate() {
+        headerSignContentLengthValidationShouldPropagateWithEndStream(true, false);
+    }
+
+    @Test
+    public void headerMinusSignContentLengthValidationShouldPropagateWithEndStream() {
+        headerSignContentLengthValidationShouldPropagateWithEndStream(true, true);
+    }
+
+    private void headerSignContentLengthValidationShouldPropagateWithEndStream(boolean minus, boolean endStream) {
+        final LastInboundHandler inboundHandler = new LastInboundHandler();
+        request.add(HttpHeaderNames.CONTENT_LENGTH, (minus ? "-" : "+") + 1);
+        Http2StreamChannel channel = newInboundStream(3, endStream, inboundHandler);
+        assertThrows(StreamException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                inboundHandler.checkException();
+            }
+        });
+
         assertNull(inboundHandler.readInbound());
         assertFalse(channel.isActive());
     }
 
     @Test
     public void headerContentLengthNotMatchValidationShouldPropagate() {
-        LastInboundHandler inboundHandler = new LastInboundHandler();
+        headerContentLengthNotMatchValidationShouldPropagate(false, false, false);
+    }
+
+    @Test
+    public void headerContentLengthNotMatchValidationShouldPropagateWithEndStream() {
+        headerContentLengthNotMatchValidationShouldPropagate(false, true, false);
+    }
+
+    @Test
+    public void headerContentLengthNotMatchValidationShouldPropagateCloseLocal() {
+        headerContentLengthNotMatchValidationShouldPropagate(true, false, false);
+    }
+
+    @Test
+    public void headerContentLengthNotMatchValidationShouldPropagateWithEndStreamCloseLocal() {
+        headerContentLengthNotMatchValidationShouldPropagate(true, true, false);
+    }
+
+    @Test
+    public void headerContentLengthNotMatchValidationShouldPropagateTrailers() {
+        headerContentLengthNotMatchValidationShouldPropagate(false, false, true);
+    }
+
+    @Test
+    public void headerContentLengthNotMatchValidationShouldPropagateWithEndStreamTrailers() {
+        headerContentLengthNotMatchValidationShouldPropagate(false, true, true);
+    }
+
+    @Test
+    public void headerContentLengthNotMatchValidationShouldPropagateCloseLocalTrailers() {
+        headerContentLengthNotMatchValidationShouldPropagate(true, false, true);
+    }
+
+    @Test
+    public void headerContentLengthNotMatchValidationShouldPropagateWithEndStreamCloseLocalTrailers() {
+        headerContentLengthNotMatchValidationShouldPropagate(true, true, true);
+    }
+
+    private void headerContentLengthNotMatchValidationShouldPropagate(
+            boolean closeLocal, boolean endStream, boolean trailer) {
+        final LastInboundHandler inboundHandler = new LastInboundHandler();
         request.addLong(HttpHeaderNames.CONTENT_LENGTH, 1);
         Http2StreamChannel channel = newInboundStream(3, false, inboundHandler);
         assertTrue(channel.isActive());
 
-        frameInboundWriter.writeInboundData(channel.stream().id(), bb("foo"), 0, false);
-        try {
-            inboundHandler.checkException();
-            fail();
-        } catch (Exception e) {
-            assertThat(e, CoreMatchers.<Exception>instanceOf(StreamException.class));
+        if (closeLocal) {
+            channel.writeAndFlush(new DefaultHttp2HeadersFrame(new DefaultHttp2Headers(), true))
+                    .syncUninterruptibly();
+            assertEquals(Http2Stream.State.HALF_CLOSED_LOCAL, channel.stream().state());
+        } else {
+            assertEquals(Http2Stream.State.OPEN, channel.stream().state());
         }
+
+        if (trailer) {
+            frameInboundWriter.writeInboundHeaders(channel.stream().id(), new DefaultHttp2Headers(), 0, endStream);
+        } else {
+            frameInboundWriter.writeInboundData(channel.stream().id(), bb("foo"), 0, endStream);
+        }
+
+        assertThrows(StreamException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                inboundHandler.checkException();
+            }
+        });
+
         Http2HeadersFrame headersFrame = new DefaultHttp2HeadersFrame(request).stream(channel.stream());
         assertEquals(headersFrame, inboundHandler.readInbound());
         assertNull(inboundHandler.readInbound());
@@ -518,23 +616,29 @@ public abstract class Http2MultiplexTest<C extends Http2FrameCodec> {
         assertFalse(inboundHandler.isChannelActive());
 
         // A RST_STREAM frame should NOT be emitted, as we received a RST_STREAM.
-        verify(frameWriter, Mockito.never()).writeRstStream(eqCodecCtx(), eqStreamId(channel),
+        verify(frameWriter, never()).writeRstStream(eqCodecCtx(), eqStreamId(channel),
                 anyLong(), anyChannelPromise());
     }
 
-    @Test(expected = StreamException.class)
+    @Test
     public void streamExceptionTriggersChildChannelExceptionAndClose() throws Exception {
-        LastInboundHandler inboundHandler = new LastInboundHandler();
+        final LastInboundHandler inboundHandler = new LastInboundHandler();
         Http2StreamChannel channel = newInboundStream(3, false, inboundHandler);
         assertTrue(channel.isActive());
         StreamException cause = new StreamException(channel.stream().id(), Http2Error.PROTOCOL_ERROR, "baaam!");
         parentChannel.pipeline().fireExceptionCaught(cause);
 
         assertFalse(channel.isActive());
-        inboundHandler.checkException();
+
+        assertThrows(StreamException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                inboundHandler.checkException();
+            }
+        });
     }
 
-    @Test(expected = ClosedChannelException.class)
+    @Test
     public void streamClosedErrorTranslatedToClosedChannelExceptionOnWrites() throws Exception {
         LastInboundHandler inboundHandler = new LastInboundHandler();
 
@@ -551,7 +655,8 @@ public abstract class Http2MultiplexTest<C extends Http2FrameCodec> {
                         new StreamException(childChannel.stream().id(), Http2Error.STREAM_CLOSED, "Stream Closed"));
             }
         });
-        ChannelFuture future = childChannel.writeAndFlush(new DefaultHttp2HeadersFrame(new DefaultHttp2Headers()));
+        final ChannelFuture future = childChannel.writeAndFlush(
+                new DefaultHttp2HeadersFrame(new DefaultHttp2Headers()));
 
         parentChannel.flush();
 
@@ -560,7 +665,12 @@ public abstract class Http2MultiplexTest<C extends Http2FrameCodec> {
 
         inboundHandler.checkException();
 
-        future.syncUninterruptibly();
+        assertThrows(ClosedChannelException.class, new Executable() {
+            @Override
+            public void execute() {
+                future.syncUninterruptibly();
+            }
+        });
     }
 
     @Test
@@ -597,7 +707,7 @@ public abstract class Http2MultiplexTest<C extends Http2FrameCodec> {
     // Test failing the promise of the first headers frame of an outbound stream. In practice this error case would most
     // likely happen due to the max concurrent streams limit being hit or the channel running out of stream identifiers.
     //
-    @Test(expected = Http2NoMoreStreamIdsException.class)
+    @Test
     public void failedOutboundStreamCreationThrowsAndClosesChannel() throws Exception {
         LastInboundHandler handler = new LastInboundHandler();
         Http2StreamChannel childChannel = newOutboundStream(handler);
@@ -614,7 +724,7 @@ public abstract class Http2MultiplexTest<C extends Http2FrameCodec> {
             }
         });
 
-        ChannelFuture future = childChannel.writeAndFlush(new DefaultHttp2HeadersFrame(headers));
+        final ChannelFuture future = childChannel.writeAndFlush(new DefaultHttp2HeadersFrame(headers));
         parentChannel.flush();
 
         assertFalse(childChannel.isActive());
@@ -622,7 +732,12 @@ public abstract class Http2MultiplexTest<C extends Http2FrameCodec> {
 
         handler.checkException();
 
-        future.syncUninterruptibly();
+        assertThrows(Http2NoMoreStreamIdsException.class, new Executable() {
+            @Override
+            public void execute() {
+                future.syncUninterruptibly();
+            }
+        });
     }
 
     @Test
@@ -1257,7 +1372,7 @@ public abstract class Http2MultiplexTest<C extends Http2FrameCodec> {
                                                                 int numFrames) {
         for (int i = 0; i < numFrames; i++) {
             Http2StreamFrame frame = inboundHandler.readInbound();
-            assertNotNull(i + " out of " + numFrames + " received", frame);
+            assertNotNull(frame, i + " out of " + numFrames + " received");
             assertEquals(streamChannel.stream(), frame.stream());
             release(frame);
         }

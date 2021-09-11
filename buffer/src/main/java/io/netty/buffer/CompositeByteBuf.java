@@ -374,8 +374,12 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
 
         int readableBytes = 0;
         int capacity = capacity();
-        for (int i = 0; i < buffers.length; i++) {
-            readableBytes += buffers[i].readableBytes();
+        for (int i = arrOffset; i < buffers.length; i++) {
+            ByteBuf b = buffers[i];
+            if (b == null) {
+                break;
+            }
+            readableBytes += b.readableBytes();
 
             // Check if we would overflow.
             // See https://github.com/netty/netty/issues/10194
@@ -1660,6 +1664,9 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
             if (buf.nioBufferCount() == 1) {
                 return buf.nioBuffer(c.idx(index), length);
             }
+            break;
+        default:
+            break;
         }
 
         ByteBuffer[] buffers = nioBuffers(index, length);

@@ -86,8 +86,8 @@ class EpollEventLoop extends SingleThreadEventLoop {
 
     EpollEventLoop(EventLoopGroup parent, Executor executor, int maxEvents,
                    SelectStrategy strategy, RejectedExecutionHandler rejectedExecutionHandler,
-                   EventLoopTaskQueueFactory queueFactory) {
-        super(parent, executor, false, newTaskQueue(queueFactory), newTaskQueue(queueFactory),
+                   EventLoopTaskQueueFactory taskQueueFactory, EventLoopTaskQueueFactory tailTaskQueueFactory) {
+        super(parent, executor, false, newTaskQueue(taskQueueFactory), newTaskQueue(tailTaskQueueFactory),
                 rejectedExecutionHandler);
         selectStrategy = ObjectUtil.checkNotNull(strategy, "strategy");
         if (maxEvents == 0) {
@@ -391,7 +391,7 @@ class EpollEventLoop extends SingleThreadEventLoop {
                     events.increase();
                 }
             } catch (Error e) {
-                throw (Error) e;
+                throw e;
             } catch (Throwable t) {
                 handleLoopException(t);
             } finally {
@@ -404,7 +404,7 @@ class EpollEventLoop extends SingleThreadEventLoop {
                         }
                     }
                 } catch (Error e) {
-                    throw (Error) e;
+                    throw e;
                 } catch (Throwable t) {
                     handleLoopException(t);
                 }

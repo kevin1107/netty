@@ -32,7 +32,11 @@ public final class EpollChannelOption<T> extends UnixChannelOption<T> {
     public static final ChannelOption<Boolean> IP_FREEBIND = valueOf("IP_FREEBIND");
     public static final ChannelOption<Boolean> IP_TRANSPARENT = valueOf("IP_TRANSPARENT");
     public static final ChannelOption<Boolean> IP_RECVORIGDSTADDR = valueOf("IP_RECVORIGDSTADDR");
-    public static final ChannelOption<Integer> TCP_FASTOPEN = valueOf(EpollChannelOption.class, "TCP_FASTOPEN");
+    /**
+     * @deprecated Use {@link ChannelOption#TCP_FASTOPEN} instead.
+     */
+    @Deprecated
+    public static final ChannelOption<Integer> TCP_FASTOPEN = ChannelOption.TCP_FASTOPEN;
 
     /**
      * @deprecated Use {@link ChannelOption#TCP_FASTOPEN_CONNECT} instead.
@@ -50,6 +54,7 @@ public final class EpollChannelOption<T> extends UnixChannelOption<T> {
     public static final ChannelOption<Map<InetAddress, byte[]>> TCP_MD5SIG = valueOf("TCP_MD5SIG");
 
     public static final ChannelOption<Integer> MAX_DATAGRAM_PAYLOAD_SIZE = valueOf("MAX_DATAGRAM_PAYLOAD_SIZE");
+    public static final ChannelOption<Boolean> UDP_GRO = valueOf("UDP_GRO");
 
     @SuppressWarnings({ "unused", "deprecation" })
     private EpollChannelOption() {

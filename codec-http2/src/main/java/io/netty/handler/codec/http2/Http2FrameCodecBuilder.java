@@ -29,6 +29,18 @@ public class Http2FrameCodecBuilder extends
 
     private Http2FrameWriter frameWriter;
 
+    /**
+     * Allows overriding behavior of existing builder.
+     * <p>
+     * Users of this constructor are responsible for invoking {@link #server(boolean)} method or overriding
+     * {@link #isServer()} method to give the builder information if the {@link Http2Connection}(s) it creates are in
+     * server or client mode.
+     *
+     * @see AbstractHttp2ConnectionHandlerBuilder
+     */
+    protected Http2FrameCodecBuilder() {
+    }
+
     Http2FrameCodecBuilder(boolean server) {
         server(server);
         // For backwards compatibility we should disable to timeout by default at this layer.
